@@ -1,0 +1,9 @@
+node_modules/
+uploads/
+*.log
+.env
+.env
+.env.local
+.env.production
+node_modules/
+.next/

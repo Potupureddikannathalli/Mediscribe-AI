@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediScribe AI - Healthcare Made Simple & Smart</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-content">
+                <div class="nav-left">
+                    <div class="logo-icon">
+                        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                    </div>
+                    <span class="logo-text">MediScribe AI</span>
+                </div>
+                <div class="nav-right">
+                    <div class="dropdown">
+                        <button class="login-btn">Login</button>
+                        <div class="dropdown-content">
+                            <a href="login-patient.html" class="dropdown-item">
+                                <span>👤</span>
+                                <span>Patient Login</span>
+                            </a>
+                            <a href="login-doctor.html" class="dropdown-item">
+                                <span>👨‍⚕️</span>
+                                <span>Doctor Login</span>
+                            </a>
+                            <a href="login-admin.html" class="dropdown-item">
+                                <span>🛡️</span>
+                                <span>Admin Login</span>
+                            </a>
+                        </div>
+                    </div>
+                    <a href="register.html" class="register-btn">Register</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero-section">
+            <div class="container">
+                <div class="hero-content fade-in">
+                    <h1 class="hero-title">
+                        Healthcare Made
+                        <span class="gradient-text">Simple & Smart</span>
+                    </h1>
+                    <p class="hero-description">
+                        AI-powered medical consultations with real-time transcription, automated prescriptions, and personalized health recommendations.
+                    </p>
+                    <div class="hero-buttons">
+                          <a href="register.html?role=patient" class="btn-primary">Join Video Call</a>
+                        <a href="register.html?role=doctor" class="btn-secondary">Join as Doctor</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="roles-section">
+            <div class="container">
+                <h2 class="section-title fade-in-view">Choose Your Role</h2>
+                <div class="roles-grid">
+                    <div class="role-card" data-role="patient">
+                        <a href="register.html?role=patient" class="role-link">
+                            <div class="role-gradient emerald-teal"></div>
+                            <div class="role-icon">👤</div>
+                            <h3 class="role-title">Patient</h3>
+                            <p class="role-desc">Book appointments, consult with doctors, and manage your health records</p>
+                            <div class="role-cta emerald-teal-text">
+                                Register as Patient
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                </svg>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="role-card" data-role="doctor">
+                        <a href="register.html?role=doctor" class="role-link">
+                            <div class="role-gradient blue-indigo"></div>
+                            <div class="role-icon">👨‍⚕️</div>
+                            <h3 class="role-title">Doctor</h3>
+                            <p class="role-desc">Manage appointments, conduct video consultations, and use AI assistance</p>
+                            <div class="role-cta blue-indigo-text">
+                                Register as Doctor
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                </svg>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="role-card" data-role="admin">
+                        <a href="register.html?role=admin" class="role-link">
+                            <div class="role-gradient purple-pink"></div>
+                            <div class="role-icon">🛡️</div>
+                            <h3 class="role-title">Admin</h3>
+                            <p class="role-desc">Manage users, departments, and oversee the entire platform</p>
+                            <div class="role-cta purple-pink-text">
+                                Register as Admin
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                </svg>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="features-section">
+            <div class="container">
+                <div class="features-card">
+                    <div class="features-grid">
+                        <div class="features-content" style="grid-column: span 2;">
+                            <h2 class="features-title">AI-Powered Video Calls</h2>
+                            <ul class="features-list">
+                                <li class="feature-item">
+                                    <div class="feature-check">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    Real-time transcription during video calls
+                                </li>
+                                <li class="feature-item">
+                                    <div class="feature-check">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    Automatic generation of doctor's notes
+                                </li>
+                                <li class="feature-item">
+                                    <div class="feature-check">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    Smart prescription drafting
+                                </li>
+                                <li class="feature-item">
+                                    <div class="feature-check">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    Patient summary with lifestyle recommendations
+                                </li>
+                                <li class="feature-item">
+                                    <div class="feature-check">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    Multi-language support
+                                </li>
+                            </ul>
+                        </div>
+                        <!-- Removed features-video section -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="departments-section">
+            <div class="container">
+                <h2 class="section-title">Our Departments</h2>
+                <div class="departments-grid">
+                    <div class="dept-card fade-in-view">
+                        <div class="dept-icon">🏥</div>
+                        <p class="dept-name">General Medicine</p>
+                    </div>
+                    <div class="dept-card fade-in-view">
+                        <div class="dept-icon">❤️</div>
+                        <p class="dept-name">Cardiology</p>
+                    </div>
+                    <div class="dept-card fade-in-view">
+                        <div class="dept-icon">🧴</div>
+                        <p class="dept-name">Dermatology</p>
+                    </div>
+                    <div class="dept-card fade-in-view">
+                        <div class="dept-icon">🦴</div>
+                        <p class="dept-name">Orthopedics</p>
+                    </div>
+                    <div class="dept-card fade-in-view">
+                        <div class="dept-icon">🧠</div>
+                        <p class="dept-name">Neurology</p>
+                    </div>
+                    <div class="dept-card fade-in-view">
+                        <div class="dept-icon">👶</div>
+                        <p class="dept-name">Pediatrics</p>
+                    </div>
+                    <div class="dept-card fade-in-view">
+                        <div class="dept-icon">🧘</div>
+                        <p class="dept-name">Psychiatry</p>
+                    </div>
+                    <div class="dept-card fade-in-view">
+                        <div class="dept-icon">👁️</div>
+                        <p class="dept-name">Ophthalmology</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-left">
+                    <div class="footer-logo-icon">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                    </div>
+                    <span class="footer-logo-text">MediScribe AI</span>
+                </div>
+                <p class="footer-copyright">© 2025 MediScribe AI. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
