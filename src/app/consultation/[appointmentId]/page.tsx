@@ -7,6 +7,8 @@ import { getCurrentUser, getAppointments, updateAppointment, addConsultation, la
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
 // Mock translation function for the demo
 const translateTranscript = (text: string, languageCode: string) => {
   if (languageCode === "en") return text;
@@ -182,7 +184,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
 
       // Backend Polling (for remote devices)
       try {
-        const res = await fetch(`http://localhost:5000/api/appointments`);
+        const res = await fetch(`${API_URL}/api/appointments`);
         const data = await res.json();
         const currentApt = data.data.find((a: any) => a._id === resolvedParams.appointmentId || a.id === resolvedParams.appointmentId);
 
@@ -252,7 +254,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
             // 2. Sync to backend (only if enabled in this tab)
             if (isTranscriptionEnabled) {
               try {
-                await fetch(`http://localhost:5000/api/appointments/${resolvedParams.appointmentId}/transcript`, {
+                await fetch(`${API_URL}/api/appointments/${resolvedParams.appointmentId}/transcript`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify(newLine)
@@ -339,7 +341,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
       const transcriptText = transcript.map(t => `${t.speaker}: ${t.text}`).join("\n");
 
       // 2. Call our new Backend API
-      const response = await fetch('http://localhost:5000/api/generate-reports', {
+      const response = await fetch(`${API_URL}/api/generate-reports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -398,7 +400,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
       // We will use existing api helper if available or fetch. The file doesn't import api yet.
       // Let's assume we need to import api. I'll add the import in a separate call or use fetch here.
       // Using fetch directly for simplicity in this replacement chunk to avoid import errors if I mess up line numbers.
-      const saveResponse = await fetch('http://localhost:5000/api/consultations', {
+      const saveResponse = await fetch(`${API_URL}/api/consultations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(consultationData)
@@ -414,7 +416,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
           message: user.role === 'doctor' ? "Doctor has ended the video consultation." : "Patient has left the consultation.",
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
-        await fetch(`http://localhost:5000/api/appointments/${resolvedParams.appointmentId}/chat`, {
+        await fetch(`${API_URL}/api/appointments/${resolvedParams.appointmentId}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(endMessage)
@@ -478,7 +480,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
 
     // 2. Sync to backend
     try {
-      await fetch(`http://localhost:5000/api/appointments/${resolvedParams.appointmentId}/chat`, {
+      await fetch(`${API_URL}/api/appointments/${resolvedParams.appointmentId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newMessage)
@@ -523,7 +525,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
 
       // 2. Sync to backend
       try {
-        await fetch(`http://localhost:5000/api/appointments/${resolvedParams.appointmentId}/chat`, {
+        await fetch(`${API_URL}/api/appointments/${resolvedParams.appointmentId}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newMessage)

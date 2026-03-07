@@ -23,7 +23,11 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [process.env.FRONTEND_URL, 'http://localhost:3000'].filter(Boolean),
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -337,7 +341,8 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
     return res.status(400).json({ success: false, message: 'No file uploaded' });
   }
 
-  const fileUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+  const baseUrl = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+  const fileUrl = `${baseUrl}/uploads/${req.file.filename}`;
   res.json({
     success: true,
     message: 'File uploaded successfully',
@@ -395,7 +400,7 @@ app.post('/api/generate-reports', async (req, res) => {
     });
 
     const result = JSON.parse(completion.choices[0].message.content);
-    
+
     // Ensure the results are strings even if AI ignored the formatting instruction
     if (typeof result.doctorNotes === 'object') {
       result.doctorNotes = Object.entries(result.doctorNotes)
