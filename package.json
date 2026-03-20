@@ -77,6 +77,7 @@
         "next": "15.3.6",
         "next-themes": "^0.4.6",
         "orchids-visual-edits": "^1.0.13",
+        "peerjs": "^1.5.5",
         "qss": "^3.0.0",
         "react": "19.0.0",
         "react-day-picker": "^9.8.0",

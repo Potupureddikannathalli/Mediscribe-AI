@@ -104,6 +104,9 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const peerInstance = useRef<any>(null);
+  const callIntervalRef = useRef<any>(null);
+  const currentCallRef = useRef<any>(null);
 
   useEffect(() => {
     const initPage = async () => {
@@ -139,33 +142,101 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
     };
 
     initPage();
-    return () => { if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop()); };
+    return () => { 
+      if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop()); 
+      if (peerInstance.current) peerInstance.current.destroy();
+      if (callIntervalRef.current) clearInterval(callIntervalRef.current);
+    };
   }, [router, resolvedParams.appointmentId]);
 
   useEffect(() => {
-    if (localVideoRef.current) {
-      if (streamRef.current && !isVideoOff && isCallActive) {
-        localVideoRef.current.srcObject = streamRef.current;
-      } else {
-        localVideoRef.current.srcObject = null;
-      }
-    }
-  }, [isVideoOff, isCallActive]);
-
-  useEffect(() => {
-    if (remoteVideoRef.current) {
-      if (isCallActive) {
+    if (!isCallActive) {
+      if (localVideoRef.current) localVideoRef.current.srcObject = null;
+      if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = null;
-        remoteVideoRef.current.src = "https://assets.mixkit.co/videos/preview/mixkit-doctor-working-on-his-computer-at-the-office-33825-large.mp4";
-        remoteVideoRef.current.loop = true;
-        remoteVideoRef.current.muted = true;
-        remoteVideoRef.current.play().catch(() => { });
-      } else {
         remoteVideoRef.current.src = "";
-        remoteVideoRef.current.srcObject = null;
+        remoteVideoRef.current.muted = false; // By default don't mute real WebRTC video call audio
       }
     }
   }, [isCallActive]);
+
+  useEffect(() => {
+    if (streamRef.current) {
+      streamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = !isMuted;
+      });
+    }
+  }, [isMuted, isCallActive]);
+
+  useEffect(() => {
+    if (streamRef.current) {
+      streamRef.current.getVideoTracks().forEach(track => {
+        track.enabled = !isVideoOff;
+      });
+    }
+  }, [isVideoOff, isCallActive]);
+
+  const initPeer = async (stream: MediaStream) => {
+    try {
+      const Peer = (await import('peerjs')).default;
+      const myRole = user.role.toLowerCase(); 
+      const myPeerId = `mediscribe-${resolvedParams.appointmentId}-${myRole}`;
+      const targetPeerId = `mediscribe-${resolvedParams.appointmentId}-${myRole === 'doctor' ? 'patient' : 'doctor'}`;
+
+      const peer = new Peer(myPeerId);
+      peerInstance.current = peer;
+
+      peer.on('open', (id) => {
+        console.log('Peer connected with ID:', id);
+        
+        callIntervalRef.current = setInterval(() => {
+          if (!remoteVideoRef.current?.srcObject) {
+            callPeer(peer, targetPeerId, stream);
+          } else {
+            clearInterval(callIntervalRef.current);
+          }
+        }, 3000);
+      });
+
+      peer.on('call', (call) => {
+        console.log("Receiving call from:", call.peer);
+        call.answer(stream);
+        currentCallRef.current = call;
+        call.on('stream', (remoteStream) => {
+          if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
+            remoteVideoRef.current.srcObject = remoteStream;
+            remoteVideoRef.current.play().catch(e => console.log("Play interrupted", e));
+          }
+        });
+      });
+
+      peer.on('error', (err) => {
+        console.log("PeerJS error:", err?.type, err);
+      });
+
+    } catch (err) {
+      console.error("Peer init failed:", err);
+    }
+  };
+
+  const callPeer = (peer: any, targetId: string, stream: MediaStream) => {
+    try {
+      console.log('Attempting to call target peer:', targetId);
+      const call = peer.call(targetId, stream);
+      if (call) {
+        currentCallRef.current = call;
+        call.on('stream', (remoteStream: MediaStream) => {
+          if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
+            console.log('Received remote stream from target');
+            remoteVideoRef.current.srcObject = remoteStream;
+            remoteVideoRef.current.play().catch(e => console.log("Play interrupted", e));
+          }
+        });
+      }
+    } catch (e) {
+      console.log("Call attempt error", e);
+    }
+  };
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -189,14 +260,24 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
         const currentApt = data.data.find((a: any) => a._id === resolvedParams.appointmentId || a.id === resolvedParams.appointmentId);
 
         if (currentApt) {
-          // Update live transcript from backend
-          if (currentApt.liveTranscript && currentApt.liveTranscript.length > transcript.length) {
-            setTranscript(currentApt.liveTranscript);
+          // Update live transcript from backend without stale state closure bugs
+          if (currentApt.liveTranscript) {
+            setTranscript(prev => {
+              if (currentApt.liveTranscript.length > prev.length) {
+                return currentApt.liveTranscript;
+              }
+              return prev;
+            });
           }
 
           // Update chat messages from backend
-          if (currentApt.chatMessages && currentApt.chatMessages.length > chatMessages.length) {
-            setChatMessages(currentApt.chatMessages);
+          if (currentApt.chatMessages) {
+            setChatMessages(prev => {
+              if (currentApt.chatMessages.length > prev.length) {
+                return currentApt.chatMessages;
+              }
+              return prev;
+            });
           }
 
           if (currentApt.status === 'completed' && !isCallEnded) {
@@ -248,7 +329,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
               language: selectedLanguage
             };
 
-            // 1. Update local state immediately
+            // 1. Update local state immediately. To avoid duplicate keys and reference bugs, make sure it pushes accurately.
             setTranscript(prev => [...prev, newLine]);
 
             // 2. Sync to backend (only if enabled in this tab)
@@ -266,6 +347,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
           }
         };
 
+        let isCriticalError = false;
         recognition.onerror = (event: any) => {
           // Suppress noise errors (no-speech, aborted are normal during silence/interruption)
           if (event.error === 'no-speech' || event.error === 'aborted') {
@@ -274,17 +356,18 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
           }
 
           console.error("❌ Speech Recognition Error:", event.error);
-          if (event.error === 'not-allowed') {
-            toast.error("Microphone access is blocked. Please check your browser permissions.");
+          if (event.error === 'not-allowed' || event.error === 'audio-capture') {
+            isCriticalError = true;
+            toast.error("Microphone access is blocked or unavailable. Please check your browser permissions.");
           }
         };
 
         recognition.onend = () => {
           console.log("⚠️ Speech Recognition Ended");
           // Automatically restart if call is still active with a small delay to prevent tight loops
-          if (isCallActive) {
+          if (isCallActive && !isCriticalError) {
             setTimeout(() => {
-              if (isCallActive) {
+              if (isCallActive && !isCriticalError) {
                 console.log("🔄 Restarting Speech Recognition...");
                 try { recognition.start(); } catch (e) { console.error("Restart failed", e); }
               }
@@ -313,12 +396,9 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
 
   useEffect(() => {
     if (chatEndRef.current) {
-      const parent = chatEndRef.current.parentElement;
-      if (parent) {
-        parent.scrollTop = parent.scrollHeight;
-      }
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
-  }, [chatMessages, transcript]);
+  }, [chatMessages, transcript, activeTab]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 
@@ -328,11 +408,22 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
       streamRef.current = stream;
       setShowPermissionModal(false);
       setIsCallActive(true);
+      
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+
+      initPeer(stream);
     } catch (err) { alert("Camera/Mic access required for recording and video call."); }
   };
 
   const endCall = async () => {
     setIsCallActive(false);
+    
+    if (peerInstance.current) peerInstance.current.destroy();
+    if (callIntervalRef.current) clearInterval(callIntervalRef.current);
+    if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+
     if (!appointment || !user) return;
 
     setIsGeneratingReport(true); // Start loading
@@ -539,7 +630,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
   if (!user || !appointment) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white font-medium">Loading...</div>;
 
   return (
-    <div className="h-screen w-full bg-slate-900 flex flex-col font-sans text-white overflow-hidden">
+    <div className="h-[100dvh] w-full bg-slate-900 flex flex-col font-sans text-white overflow-hidden">
       {showPermissionModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 max-w-md w-full text-slate-900 shadow-2xl">
@@ -581,7 +672,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
               <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
               {user.role === 'patient' ? appointment.doctorName : appointment.patientName} ({uit.remote})
             </div>
-            {!isCallActive && <div className="absolute inset-0 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm text-white/60">Waiting for connection...</div>}
+            {!remoteVideoRef.current?.srcObject && <div className="absolute inset-0 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm text-white/60">Waiting for {user.role === 'patient' ? 'doctor' : 'patient'} to join...</div>}
           </div>
           <div className="flex-1 relative bg-slate-800 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl min-h-0">
             <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
