@@ -306,7 +306,46 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
         <div className="mt-12 bg-slate-800/30 rounded-[40px] border border-slate-700/50 p-10 shadow-xl backdrop-blur-md">
           <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500 mb-8">{t.transcript}</h3>
           <div className="bg-slate-900/80 rounded-[32px] p-8 max-h-[500px] overflow-y-auto border border-slate-700/50 shadow-inner custom-scrollbar">
-            <pre className="text-sm text-slate-400 whitespace-pre-wrap font-sans leading-[2.2]">{consultation.transcript}</pre>
+            {consultation.transcript && consultation.transcript.length > 0 ? (
+              <div className="flex flex-col">
+                {consultation.transcript.split('\n').filter((l: string) => l.trim()).map((line: string, i: number) => {
+                  const colonIndex = line.indexOf(':');
+                  if (colonIndex === -1) return <div key={i} className="text-slate-400 mb-4 px-4 py-2 bg-slate-800/50 rounded-2xl text-sm">{line}</div>;
+                  
+                  const speakerRaw = line.slice(0, colonIndex).trim();
+                  const text = line.slice(colonIndex + 1).trim();
+                  
+                  const isDoctor = /doc|डॉक्ट|డాక్ట|டாக்ட|ডাক্ত/i.test(speakerRaw);
+                  const isPatient = /pat|रोगी|రోగి|நோயாள|রোগী/i.test(speakerRaw);
+                  
+                  let isMe = false;
+                  if (user.role === 'doctor') {
+                    isMe = isDoctor || (!isPatient && speakerRaw === 'Doctor');
+                  } else {
+                    isMe = isPatient || (!isDoctor && speakerRaw === 'Patient');
+                  }
+
+                  const initials = speakerRaw.charAt(0).toUpperCase();
+                  const isDocSpeaker = isDoctor || speakerRaw === 'Doctor';
+
+                  return (
+                    <div key={i} className={`flex gap-4 mb-6 ${isMe ? 'flex-row-reverse' : ''}`}>
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-bold shadow-lg shrink-0 ${isDocSpeaker ? 'bg-indigo-600 text-white' : 'bg-teal-600 text-white'}`}>
+                        {initials}
+                      </div>
+                      <div className={`max-w-[80%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                        <span className="text-[10px] text-slate-400 font-bold mb-1.5 px-1 uppercase tracking-widest">{speakerRaw}</span>
+                        <div className={`px-6 py-4 rounded-3xl text-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white shadow-xl shadow-blue-500/20 rounded-tr-sm' : 'bg-slate-700 text-slate-200 border border-slate-600 rounded-tl-sm'}`}>
+                          {text}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-20 text-slate-500 italic">No audio transcript was captured during this session.</div>
+            )}
           </div>
         </div>
       </main>

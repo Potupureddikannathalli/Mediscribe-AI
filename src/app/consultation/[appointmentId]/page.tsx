@@ -704,15 +704,18 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
                   </div>
                 )}
                 {transcript.length === 0 ? <div className="text-center py-20 text-slate-500">{uit.startPrompt}</div> :
-                  transcript.map((t, i) => (
-                    <div key={i} className={`flex gap-3 ${t.speaker === 'Doctor' ? '' : 'flex-row-reverse'}`}>
-                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold ${t.speaker === 'Doctor' ? 'bg-blue-600' : 'bg-emerald-600'}`}>{t.speaker[0]}</div>
-                      <div className={`max-w-[85%] ${t.speaker === 'Doctor' ? '' : 'text-right'}`}>
-                        <div className={`p-4 rounded-3xl inline-block text-sm ${t.speaker === 'Doctor' ? 'bg-slate-700/50 text-slate-200' : 'bg-blue-600 text-white'}`}>{t.text}</div>
+                  transcript.map((t, i) => {
+                    const isMe = t.speaker.toLowerCase() === user.role.toLowerCase();
+                    return (
+                    <div key={i} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
+                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold ${t.speaker === 'Doctor' ? 'bg-indigo-600' : 'bg-teal-600'} shrink-0`}>{t.speaker[0]}</div>
+                      <div className={`max-w-[85%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                        <span className="text-[10px] text-slate-400 font-semibold mb-1 px-1 uppercase tracking-wider">{t.speaker}</span>
+                        <div className={`p-4 rounded-3xl inline-block text-sm ${isMe ? 'bg-blue-600 text-white shadow-lg rounded-tr-sm' : 'bg-slate-700/50 text-slate-200 rounded-tl-sm'}`}>{t.text}</div>
                         <p className="text-[10px] text-slate-500 mt-1 font-medium">{t.time}</p>
                       </div>
                     </div>
-                  ))
+                  )})
                 }
               </div>
             )}
