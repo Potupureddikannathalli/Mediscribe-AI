@@ -1,4 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+let API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+if (typeof window !== 'undefined' && API_URL.includes('localhost')) {
+  API_URL = `${window.location.protocol}//${window.location.hostname}:5000`;
+}
 
 export const api = {
   async login(credentials: any) {

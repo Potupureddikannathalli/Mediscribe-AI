@@ -7,7 +7,10 @@ import { getCurrentUser, getAppointments, updateAppointment, addConsultation, la
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+let API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+if (typeof window !== 'undefined' && API_URL.includes('localhost')) {
+  API_URL = `${window.location.protocol}//${window.location.hostname}:5000`;
+}
 
 // Mock translation function for the demo
 const translateTranscript = (text: string, languageCode: string) => {
@@ -107,6 +110,16 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
   const peerInstance = useRef<any>(null);
   const callIntervalRef = useRef<any>(null);
   const currentCallRef = useRef<any>(null);
+  const isMutedRef = useRef(isMuted);
+  const isTranscriptionEnabledRef = useRef(isTranscriptionEnabled);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  useEffect(() => {
+    isTranscriptionEnabledRef.current = isTranscriptionEnabled;
+  }, [isTranscriptionEnabled]);
 
   useEffect(() => {
     const initPage = async () => {
@@ -320,6 +333,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
         recognition.onresult = async (event: any) => {
           const result = event.results[event.results.length - 1];
           if (result.isFinal) {
+            if (isMutedRef.current || !isTranscriptionEnabledRef.current) return;
             const text = result[0].transcript;
             console.log("📝 Captured:", text);
             const newLine = {
@@ -675,7 +689,17 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
             {!remoteVideoRef.current?.srcObject && <div className="absolute inset-0 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm text-white/60">Waiting for {user.role === 'patient' ? 'doctor' : 'patient'} to join...</div>}
           </div>
           <div className="flex-1 relative bg-slate-800 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl min-h-0">
-            <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            <video ref={localVideoRef} autoPlay playsInline muted className={`w-full h-full object-cover transition-opacity duration-300 ${isVideoOff ? 'opacity-0' : 'opacity-100'}`} />
+            
+            {isVideoOff && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 pointer-events-none">
+                <div className="w-32 h-32 rounded-full bg-slate-700 flex items-center justify-center text-5xl font-bold shadow-2xl border-4 border-slate-600 mb-6">
+                  {user.name?.[0]?.toUpperCase() || uit.you[0]}
+                </div>
+                <div className="text-slate-400 font-medium tracking-widest text-sm uppercase">Camera Off</div>
+              </div>
+            )}
+
             <div className="absolute top-6 left-6 bg-emerald-600/90 px-4 py-2 rounded-2xl text-xs font-bold flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
               {uit.you} ({uit.local})
