@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, use, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, getAppointments, languages } from "@/lib/store";
 import { api } from "@/lib/api";
@@ -9,9 +9,11 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export default function ConsultationSummaryPage({ params }: { params: Promise<{ appointmentId: string }> }) {
-  const resolvedParams = use(params);
+function ConsultationSummaryContent({ params }: { params: { appointmentId: string } }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isHistoryView = searchParams.get("view") === "history";
+  
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"notes" | "prescription" | "summary" | "lifestyle">("notes");
   const [consultation, setConsultation] = useState<any>(null);
@@ -29,14 +31,14 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
 
       try {
         // Fetch consultation details
-        const consData = await api.getConsultations({ appointmentId: resolvedParams.appointmentId });
+        const consData = await api.getConsultations({ appointmentId: params.appointmentId });
         if (consData && consData.length > 0) {
           setConsultation(consData[0]);
         }
 
         // Fetch appointment details from API
         const allApts = await api.getAppointments();
-        const apt = allApts.find((a: any) => a.id === resolvedParams.appointmentId || a._id === resolvedParams.appointmentId);
+        const apt = allApts.find((a: any) => a.id === params.appointmentId || a._id === params.appointmentId);
         if (apt) {
           setAppointment(apt);
         } else {
@@ -48,9 +50,15 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
       }
     };
     initData();
-  }, [router, resolvedParams.appointmentId]);
+  }, [router, params.appointmentId]);
 
-  if (!user || !consultation || !appointment) {
+  useEffect(() => {
+    if (user?.role === 'patient' && !isHistoryView && activeTab === 'notes') {
+      setActiveTab('prescription');
+    }
+  }, [user?.role, isHistoryView, activeTab]);
+
+  if (!user || !appointment) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
         <div className="text-center">
@@ -61,7 +69,22 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
     );
   }
 
-  const languageCode = consultation.language || "en";
+  // Use a fallback if consultation hasn't been created yet
+  const effectiveConsultation = consultation || {
+    isSentToPatient: false,
+    language: appointment.language || "en",
+    doctorNotes: "Consultation notes are not yet available.",
+    prescription: "Prescription details are not yet available.",
+    patientSummary: "A summary will be available once the doctor finalizes the report.",
+    lifestyleRecommendations: [],
+    transcript: appointment.liveTranscript?.map((t: any) => `${t.speaker}: ${t.text}`).join("\n") || "",
+    chatMessagesHistory: appointment.chatMessages || [],
+    createdAt: appointment.date || new Date().toISOString()
+  };
+
+  const isSent = effectiveConsultation.isSentToPatient;
+
+  const languageCode = effectiveConsultation.language || "en";
   const language = languages.find((l) => l.code === languageCode);
 
   const translations: Record<string, any> = {
@@ -133,7 +156,7 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
     doc.text(splitText, 20, 85);
 
     // Lifestyle Recommendations (only if downloading summary)
-    if (type === 'Summary' && consultation.lifestyleRecommendations?.length > 0) {
+    if (type === 'Summary' && effectiveConsultation.lifestyleRecommendations?.length > 0) {
       let yPos = 85 + (splitText.length * 5) + 20;
 
       doc.setFontSize(14);
@@ -144,7 +167,7 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
       doc.setTextColor(0);
       yPos += 10;
 
-      consultation.lifestyleRecommendations.forEach((rec: string, i: number) => {
+      effectiveConsultation.lifestyleRecommendations.forEach((rec: string, i: number) => {
         doc.text(`${i + 1}. ${rec}`, 20, yPos);
         yPos += 7;
       });
@@ -174,12 +197,18 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
     toast.success("Lifestyle reminders scheduled and sent to patient!");
   };
 
-  const tabs = [
+  const tabs = ([
     { id: "notes", label: t.tabs.notes, icon: "📋" },
     { id: "prescription", label: t.tabs.prescription, icon: "💊" },
     { id: "summary", label: t.tabs.summary, icon: "📄" },
     { id: "lifestyle", label: t.tabs.lifestyle, icon: "🌟" },
-  ] as const;
+  ] as const).filter(tab => {
+    // Patients only see notes if explicitly in History view
+    if (user.role === 'patient' && !isHistoryView) {
+      return tab.id !== 'notes';
+    }
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col">
@@ -197,9 +226,11 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
         <div className="mb-12 flex justify-between items-end">
           <div>
             <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">
-              <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-full">{t.completed}</span>
+              <span className={`px-3 py-1 ${effectiveConsultation.isSentToPatient ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'} rounded-full`}>
+                {effectiveConsultation.isSentToPatient ? t.completed : 'Under Review'}
+              </span>
               <span>•</span>
-              <span>{new Date(consultation.createdAt).toLocaleDateString()}</span>
+              <span>{new Date(effectiveConsultation.createdAt).toLocaleDateString()}</span>
               <span>•</span>
               <span>{t.langLabel}: {language?.name}</span>
             </div>
@@ -239,10 +270,10 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
             {activeTab === "notes" && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="bg-slate-900/50 rounded-[32px] p-8 font-sans text-base whitespace-pre-wrap leading-relaxed text-slate-300 border border-slate-700/50 shadow-inner">
-                  {consultation.doctorNotes}
+                  {effectiveConsultation.doctorNotes}
                 </div>
                 <div className="flex gap-4">
-                  <button onClick={() => handleDownloadPDF('Notes', consultation.doctorNotes)} className="px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20">{t.buttons.downloadPdf}</button>
+                  <button onClick={() => handleDownloadPDF('Notes', effectiveConsultation.doctorNotes)} className="px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20">{t.buttons.downloadPdf}</button>
                   <button onClick={() => window.print()} className="px-8 py-4 bg-slate-700 text-white rounded-2xl font-bold hover:bg-slate-600 transition-all">{t.buttons.print}</button>
                 </div>
               </div>
@@ -250,10 +281,10 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
             {activeTab === "prescription" && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="bg-indigo-500/5 rounded-[32px] p-8 font-mono text-base whitespace-pre-wrap leading-relaxed text-indigo-100 border border-indigo-500/20 shadow-inner">
-                  {consultation.prescription}
+                  {effectiveConsultation.prescription}
                 </div>
                 <div className="flex gap-4">
-                  <button onClick={() => handleDownloadPDF('Prescription', consultation.prescription)} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20">{t.buttons.downloadPdf}</button>
+                  <button onClick={() => handleDownloadPDF('Prescription', effectiveConsultation.prescription)} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20">{t.buttons.downloadPdf}</button>
                   <button onClick={() => window.print()} className="px-8 py-4 bg-slate-700 text-white rounded-2xl font-bold hover:bg-slate-600 transition-all">{t.buttons.print}</button>
                 </div>
               </div>
@@ -261,20 +292,20 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
             {activeTab === "summary" && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="bg-emerald-500/5 rounded-[32px] p-8 text-base whitespace-pre-wrap leading-relaxed text-emerald-100 border border-emerald-500/20 shadow-inner">
-                  {consultation.patientSummary}
+                  {effectiveConsultation.patientSummary}
                 </div>
                 <div className="flex gap-4">
-                  <button onClick={() => handleDownloadPDF('Summary', consultation.patientSummary)} className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-500/20">{t.buttons.downloadPdf}</button>
+                  <button onClick={() => handleDownloadPDF('Summary', effectiveConsultation.patientSummary)} className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-500/20">{t.buttons.downloadPdf}</button>
                   <button onClick={() => window.print()} className="px-8 py-4 bg-slate-700 text-white rounded-2xl font-bold hover:bg-slate-600 transition-all">{t.buttons.print}</button>
                 </div>
               </div>
             )}
             {activeTab === "lifestyle" && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {consultation.lifestyleRecommendations?.length > 0 ? (
+                {effectiveConsultation.lifestyleRecommendations?.length > 0 ? (
                   <>
                     <div className="grid gap-4">
-                      {consultation.lifestyleRecommendations.map((rec: string, i: number) => (
+                      {effectiveConsultation.lifestyleRecommendations.map((rec: string, i: number) => (
                         <div key={i} className="flex items-center gap-6 p-6 bg-amber-500/5 rounded-[28px] border border-amber-500/20 shadow-sm group hover:bg-amber-500/10 transition-colors">
                           <div className="w-12 h-12 rounded-2xl bg-amber-500 flex items-center justify-center text-white text-lg font-bold shrink-0 shadow-lg shadow-amber-500/20 group-hover:scale-110 transition-transform">{i + 1}</div>
                           <p className="text-lg text-amber-50 group-hover:text-white transition-colors">{rec}</p>
@@ -303,55 +334,103 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
           </div>
         </div>
 
-        <div className="mt-12 bg-slate-800/30 rounded-[40px] border border-slate-700/50 p-10 shadow-xl backdrop-blur-md">
-          <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500 mb-8">{t.transcript}</h3>
-          <div className="bg-slate-900/80 rounded-[32px] p-8 max-h-[500px] overflow-y-auto border border-slate-700/50 shadow-inner custom-scrollbar">
-            {consultation.transcript && consultation.transcript.length > 0 ? (
-              <div className="flex flex-col">
-                {consultation.transcript.split('\n').filter((l: string) => l.trim()).map((line: string, i: number) => {
-                  const colonIndex = line.indexOf(':');
-                  if (colonIndex === -1) return <div key={i} className="text-slate-400 mb-4 px-4 py-2 bg-slate-800/50 rounded-2xl text-sm">{line}</div>;
-                  
-                  const speakerRaw = line.slice(0, colonIndex).trim();
-                  const text = line.slice(colonIndex + 1).trim();
-                  
-                  const isDoctor = /doc|डॉक्ट|డాక్ట|டாக்ட|ডাক্ত/i.test(speakerRaw);
-                  const isPatient = /pat|रोगी|రోగి|நோயாள|রোগী/i.test(speakerRaw);
-                  
-                  let isMe = false;
-                  if (user.role === 'doctor') {
-                    isMe = isDoctor || (!isPatient && speakerRaw === 'Doctor');
-                  } else {
-                    isMe = isPatient || (!isDoctor && speakerRaw === 'Patient');
-                  }
+        {(user.role === 'doctor' || user.role === 'patient') && (
+          <div className="mt-12 space-y-12">
+            {/* Transcript Section */}
+            <div className="bg-slate-800/30 rounded-[40px] border border-slate-700/50 p-10 shadow-xl backdrop-blur-md">
+              <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500 mb-8">{t.transcript}</h3>
+              <div className="bg-slate-900/80 rounded-[32px] p-8 max-h-[400px] overflow-y-auto border border-slate-700/50 shadow-inner custom-scrollbar">
+                {((user.role === 'patient' ? effectiveConsultation.translatedTranscript : effectiveConsultation.transcript) || effectiveConsultation.transcript || "") ? (
+                  <div className="flex flex-col">
+                    {((user.role === 'patient' ? effectiveConsultation.translatedTranscript : effectiveConsultation.transcript) || effectiveConsultation.transcript || "").split('\n').filter((l: string) => l.trim()).map((line: string, i: number) => {
+                      const colonIndex = line.indexOf(':');
+                      if (colonIndex === -1) return <div key={i} className="text-slate-400 mb-4 px-4 py-2 bg-slate-800/50 rounded-2xl text-sm">{line}</div>;
+                      
+                      const speakerRaw = line.slice(0, colonIndex).trim();
+                      const text = line.slice(colonIndex + 1).trim();
+                      
+                      const isDoctor = /doc|डॉक्ट|డాక్ట|டாக்ட|ডাক্ত/i.test(speakerRaw);
+                      const isPatient = /pat|रोगी|రోగి|நோயாள|রোগী/i.test(speakerRaw);
+                      
+                      let isMe = false;
+                      if (user.role === 'doctor') {
+                        isMe = isDoctor || (!isPatient && speakerRaw === 'Doctor');
+                      } else {
+                        isMe = isPatient || (!isDoctor && speakerRaw === 'Patient');
+                      }
 
-                  const initials = speakerRaw.charAt(0).toUpperCase();
-                  const isDocSpeaker = isDoctor || speakerRaw === 'Doctor';
+                      const initials = speakerRaw.charAt(0).toUpperCase();
+                      const isDocSpeaker = isDoctor || speakerRaw === 'Doctor';
 
-                  return (
-                    <div key={i} className={`flex gap-4 mb-6 ${isMe ? 'flex-row-reverse' : ''}`}>
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-bold shadow-lg shrink-0 ${isDocSpeaker ? 'bg-indigo-600 text-white' : 'bg-teal-600 text-white'}`}>
-                        {initials}
-                      </div>
-                      <div className={`max-w-[80%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                        <span className="text-[10px] text-slate-400 font-bold mb-1.5 px-1 uppercase tracking-widest">{speakerRaw}</span>
-                        <div className={`px-6 py-4 rounded-3xl text-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white shadow-xl shadow-blue-500/20 rounded-tr-sm' : 'bg-slate-700 text-slate-200 border border-slate-600 rounded-tl-sm'}`}>
-                          {text}
+                      return (
+                        <div key={i} className={`flex gap-4 mb-6 ${isMe ? 'flex-row-reverse' : ''}`}>
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-bold shadow-lg shrink-0 ${isDocSpeaker ? 'bg-indigo-600 text-white' : 'bg-teal-600 text-white'}`}>
+                            {initials}
+                          </div>
+                          <div className={`max-w-[80%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                            <span className="text-[10px] text-slate-400 font-bold mb-1.5 px-1 uppercase tracking-widest">{speakerRaw}</span>
+                            <div className={`px-6 py-4 rounded-3xl text-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white shadow-xl shadow-blue-500/20 rounded-tr-sm' : 'bg-slate-700 text-slate-200 border border-slate-600 rounded-tl-sm'}`}>
+                              {text}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 text-slate-500 italic">No audio transcript was captured during this session.</div>
+                )}
               </div>
-            ) : (
-              <div className="text-center py-20 text-slate-500 italic">No audio transcript was captured during this session.</div>
-            )}
+            </div>
+
+            {/* Chat History Section */}
+            <div className="bg-slate-800/30 rounded-[40px] border border-slate-700/50 p-10 shadow-xl backdrop-blur-md">
+              <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500 mb-8">Consultation Chat History</h3>
+              <div className="bg-slate-900/80 rounded-[32px] p-8 max-h-[400px] overflow-y-auto border border-slate-700/50 shadow-inner custom-scrollbar">
+                {(effectiveConsultation.chatMessagesHistory || [])?.length > 0 ? (
+                  <div className="space-y-6">
+                    {(effectiveConsultation.chatMessagesHistory || []).map((m: any) => {
+                      const isMe = m.sender.toLowerCase() === user.role.toLowerCase();
+                      const displayMessage = user.role === 'patient' ? (m.translatedMessage || m.message) : m.message;
+                      return (
+                        <div key={m.id} className={`flex gap-4 ${isMe ? 'flex-row-reverse' : ''}`}>
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-bold ${m.sender === 'Doctor' ? 'bg-indigo-600' : 'bg-teal-600'} text-white shrink-0 shadow-lg`}>
+                            {m.sender[0]}
+                          </div>
+                          <div className={`max-w-[80%] ${isMe ? 'text-right' : ''}`}>
+                            <div className={`px-6 py-4 rounded-3xl inline-block text-sm ${isMe ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/20' : 'bg-slate-700 text-slate-200 border border-slate-600'}`}>
+                              <div className="flex flex-col gap-3">
+                                <span>{displayMessage}</span>
+                                {m.isFile && m.fileUrl && (
+                                  <a
+                                    href={m.fileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-4 py-2 bg-black/20 hover:bg-black/40 rounded-xl transition-all text-xs font-bold"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                    View Shared Document
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-widest px-1">{m.sender} • {m.time}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 text-slate-500 italic">No chat messages were exchanged during this session.</div>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </main>
 
       <footer className="py-12 text-center text-slate-600 text-xs border-t border-slate-800/50 mt-auto">
-        © 2025 MediScribe AI • Secure AI Consultation History
+        © 2026 MediScribe AI • Secure AI Consultation History
       </footer>
 
       <style jsx>{`
@@ -361,5 +440,21 @@ export default function ConsultationSummaryPage({ params }: { params: Promise<{ 
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
       `}</style>
     </div>
+  );
+}
+
+export default function ConsultationSummaryPage({ params }: { params: Promise<{ appointmentId: string }> }) {
+  const resolvedParams = use(params);
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-slate-400">Loading consultation summary...</p>
+        </div>
+      </div>
+    }>
+      <ConsultationSummaryContent params={resolvedParams} />
+    </Suspense>
   );
 }

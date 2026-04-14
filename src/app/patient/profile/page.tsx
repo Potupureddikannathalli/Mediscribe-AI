@@ -276,7 +276,7 @@ export default function PatientProfilePage() {
                           </div>
                         </div>
                         <Link
-                          href={`/consultation/${consultation.appointmentId}/summary`}
+                          href={`/consultation/${consultation.appointmentId}/summary?view=history`}
                           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
                         >
                           View Details

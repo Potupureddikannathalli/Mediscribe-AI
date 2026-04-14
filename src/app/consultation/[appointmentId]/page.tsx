@@ -112,6 +112,14 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
   const currentCallRef = useRef<any>(null);
   const isMutedRef = useRef(isMuted);
   const isTranscriptionEnabledRef = useRef(isTranscriptionEnabled);
+  const [interimTranscript, setInterimTranscript] = useState("");
+  const [isReviewingReport, setIsReviewingReport] = useState(false);
+  const [editableNotes, setEditableNotes] = useState("");
+  const [editablePrescription, setEditablePrescription] = useState("");
+  const [editableSummary, setEditableSummary] = useState("");
+  const [editableLifestyle, setEditableLifestyle] = useState<string[]>([]);
+  const [consultationId, setConsultationId] = useState("");
+  const [isRemoteMuted, setIsRemoteMuted] = useState(false);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -188,6 +196,26 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
       });
     }
   }, [isVideoOff, isCallActive]);
+
+  // Sync local mute status to backend
+  useEffect(() => {
+    if (!appointment || !user || !isCallActive) return;
+
+    const syncMuteStatus = async () => {
+      try {
+        const field = user.role === 'doctor' ? 'doctorMuted' : 'patientMuted';
+        await fetch(`${API_URL}/api/appointments/${resolvedParams.appointmentId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [field]: isMuted })
+        });
+      } catch (err) {
+        console.error("Failed to sync mute status", err);
+      }
+    };
+
+    syncMuteStatus();
+  }, [isMuted, isCallActive, user?.role, appointment, resolvedParams.appointmentId]);
 
   const initPeer = async (stream: MediaStream) => {
     try {
@@ -293,6 +321,13 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
             });
           }
 
+          // Update remote mute status
+          if (user?.role === 'doctor') {
+            setIsRemoteMuted(currentApt.patientMuted || false);
+          } else {
+            setIsRemoteMuted(currentApt.doctorMuted || false);
+          }
+
           if (currentApt.status === 'completed' && !isCallEnded) {
             setIsCallEnded(true);
             setIsCallActive(false);
@@ -325,39 +360,48 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
         recognitionRef.current = recognition;
 
         recognition.continuous = true;
-        recognition.interimResults = false;
+        recognition.interimResults = true;
         recognition.lang = selectedLanguage;
 
         recognition.onstart = () => console.log("✅ Speech Recognition Started");
 
         recognition.onresult = async (event: any) => {
-          const result = event.results[event.results.length - 1];
-          if (result.isFinal) {
-            if (isMutedRef.current || !isTranscriptionEnabledRef.current) return;
-            const text = result[0].transcript;
-            console.log("📝 Captured:", text);
-            const newLine = {
-              speaker: user?.role === "doctor" ? "Doctor" : "Patient",
-              text,
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              language: selectedLanguage
-            };
+          let interimText = "";
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              const text = event.results[i][0].transcript;
+              if (isMutedRef.current || !isTranscriptionEnabledRef.current) continue;
+              
+              console.log("📝 Captured Final:", text);
+              const newLine = {
+                speaker: user?.role === "doctor" ? "Doctor" : "Patient",
+                text,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                language: selectedLanguage
+              };
 
-            // 1. Update local state immediately. To avoid duplicate keys and reference bugs, make sure it pushes accurately.
-            setTranscript(prev => [...prev, newLine]);
+              // 1. Update local state immediately
+              setTranscript(prev => [...prev, newLine]);
+              setInterimTranscript(""); // Clear interim when final comes
 
-            // 2. Sync to backend (only if enabled in this tab)
-            if (isTranscriptionEnabled) {
-              try {
-                await fetch(`${API_URL}/api/appointments/${resolvedParams.appointmentId}/transcript`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(newLine)
-                });
-              } catch (err) {
-                console.error("Failed to sync transcript line", err);
+              // 2. Sync to backend
+              if (isTranscriptionEnabledRef.current) {
+                try {
+                  await fetch(`${API_URL}/api/appointments/${resolvedParams.appointmentId}/transcript`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newLine)
+                  });
+                } catch (err) {
+                  console.error("Failed to sync transcript line", err);
+                }
               }
+            } else {
+              interimText += event.results[i][0].transcript;
             }
+          }
+          if (interimText && !isMutedRef.current && isTranscriptionEnabledRef.current) {
+            setInterimTranscript(interimText);
           }
         };
 
@@ -445,126 +489,173 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
       // 1. Prepare the transcript text
       const transcriptText = transcript.map(t => `${t.speaker}: ${t.text}`).join("\n");
 
-      // 2. Call our new Backend API
+      // 2. Call AI Backend API
       const response = await fetch(`${API_URL}/api/generate-reports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcript: transcriptText,
           patientName: appointment.patientName,
-          language: selectedLanguage
+          language: selectedLanguage,
+          chatMessages: chatMessages.map(m => ({ id: m.id, message: m.message }))
         })
       });
 
       const apiResult = await response.json();
 
       let consultationData;
-      const consultationId = `cons_${Date.now()}`;
+      const consId = `cons_${Date.now()}`;
+      setConsultationId(consId);
 
       if (apiResult.success) {
-        // 3. Use the AI data
-        const aiData = apiResult.data; // { doctorNotes, prescription, ... }
+        const aiData = apiResult.data;
+        setEditableNotes(aiData.doctorNotes);
+        setEditablePrescription(aiData.prescription);
+        setEditableSummary(aiData.patientSummary);
+        setEditableLifestyle(aiData.lifestyleRecommendations || []);
+
+        // Map translated chat messages back
+        const chatWithTranslations = chatMessages.map(m => {
+          const translation = aiData.translatedChat?.find((tc: any) => tc.id === m.id);
+          return {
+            ...m,
+            translatedMessage: translation?.translatedMessage || m.message
+          };
+        });
 
         consultationData = {
-          _id: consultationId,
+          _id: consId,
           appointmentId: resolvedParams.appointmentId,
           patientId: appointment.patientId?._id || appointment.patientId,
           doctorId: appointment.doctorId?._id || appointment.doctorId,
           transcript: transcriptText,
+          translatedTranscript: aiData.translatedTranscript || transcriptText,
+          chatMessagesHistory: chatWithTranslations,
           doctorNotes: aiData.doctorNotes,
           prescription: aiData.prescription,
           patientSummary: aiData.patientSummary,
           language: selectedLanguage,
-          lifestyleRecommendations: aiData.lifestyleRecommendations
+          lifestyleRecommendations: aiData.lifestyleRecommendations,
+          isSentToPatient: false // DRAFT
         };
 
       } else {
-        console.error("Generation failed, falling back to local:", apiResult.message);
-        // toast.error(`AI Generation Failed: ${apiResult.message || "Unknown error"}. Using local fallback.`); // Assuming toast is available
-
-        // Fallback to old logic if API fails
         const localizedData = getLocalizedOutputs(selectedLanguage, appointment.patientName, transcript);
-        const uit = uiTranslations[selectedLanguage] || uiTranslations["en"];
+        setEditableNotes(localizedData.doctorNotes);
+        setEditablePrescription(localizedData.prescription);
+        setEditableSummary(localizedData.patientSummary);
+        setEditableLifestyle(localizedData.lifestyleRecommendations || []);
 
         consultationData = {
-          _id: consultationId,
+          _id: consId,
           appointmentId: resolvedParams.appointmentId,
           patientId: appointment.patientId?._id || appointment.patientId,
           doctorId: appointment.doctorId?._id || appointment.doctorId,
-          transcript: transcript.map((t) => `${t.speaker === "Doctor" ? uit.doctor : uit.patient}: ${translateTranscript(t.text, selectedLanguage)}`).join("\n"),
+          transcript: transcriptText,
+          translatedTranscript: transcriptText,
+          chatMessagesHistory: chatMessages.map(m => ({ ...m, translatedMessage: m.message })),
           doctorNotes: localizedData.doctorNotes,
           prescription: localizedData.prescription,
           patientSummary: localizedData.patientSummary,
           language: selectedLanguage,
-          lifestyleRecommendations: localizedData.lifestyleRecommendations
+          lifestyleRecommendations: localizedData.lifestyleRecommendations,
+          isSentToPatient: false // DRAFT
         };
       }
 
-      // Save to Backend
-      // Import api from '@/lib/api' at the top of the file, or use fetch directly here if adding import is hard with this tool style.
-      // We will use existing api helper if available or fetch. The file doesn't import api yet.
-      // Let's assume we need to import api. I'll add the import in a separate call or use fetch here.
-      // Using fetch directly for simplicity in this replacement chunk to avoid import errors if I mess up line numbers.
-      const saveResponse = await fetch(`${API_URL}/api/consultations`, {
+      // 3. Save as Draft to Backend
+      await fetch(`${API_URL}/api/consultations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(consultationData)
       });
 
-      const savedConsultation = await saveResponse.json();
+      // 4. Update appointment status to completed and stop video call flag
+      const completeUpdates = { status: "completed" as const, videoCallStarted: false };
+      await api.updateAppointment(resolvedParams.appointmentId, completeUpdates);
+      updateAppointment(resolvedParams.appointmentId, completeUpdates);
+      localStorage.setItem(`call_ended_${resolvedParams.appointmentId}`, "true");
 
-      if (savedConsultation.success) {
-        // Send a final message to the chat
-        const endMessage = {
-          id: `end_${Date.now()}`,
-          sender: user.role === 'doctor' ? 'Doctor' : 'Patient',
-          message: user.role === 'doctor' ? "Doctor has ended the video consultation." : "Patient has left the consultation.",
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-        await fetch(`${API_URL}/api/appointments/${resolvedParams.appointmentId}/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(endMessage)
-        });
+      // 5. If doctor, show the review UI
+      if (user.role === 'doctor') {
+        setIsReviewingReport(true);
+      } else {
+        // Patient just gets redirected or sees generic summary
+        toast.info("Consultation ended. Your doctor is finalizing the reports.");
+      }
 
-        // Also update appointment status in backend
-        await api.updateAppointment(resolvedParams.appointmentId, { status: "completed" });
+    } catch (error: any) {
+      console.error("Error ending call:", error);
+      toast.error(`Error: ${error.message}`);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
 
-        // Update local store for immediate UI feedback
-        updateAppointment(resolvedParams.appointmentId, { status: "completed" });
-        localStorage.setItem(`call_ended_${resolvedParams.appointmentId}`, "true");
+  const sendToPatient = async () => {
+    setIsGeneratingReport(true);
+    try {
+      const transcriptText = transcript.map(t => `${t.speaker}: ${t.text}`).join("\n");
+      
+      const updatedData = {
+        _id: consultationId || `cons_${Date.now()}`,
+        appointmentId: resolvedParams.appointmentId,
+        patientId: appointment.patientId?._id || appointment.patientId,
+        doctorId: appointment.doctorId?._id || appointment.doctorId,
+        transcript: transcriptText,
+        translatedTranscript: (user.role === 'patient' && consultationId) ? transcriptText : (editableNotes ? transcriptText : transcriptText), // Fallback if not available
+        chatMessagesHistory: chatMessages.map(m => ({
+          ...m,
+          translatedMessage: m.translatedMessage || m.message
+        })),
+        doctorNotes: editableNotes,
+        prescription: editablePrescription,
+        patientSummary: editableSummary,
+        lifestyleRecommendations: editableLifestyle,
+        isSentToPatient: true // FINAL
+      };
 
+      // Since the backend 'POST /api/consultations' currently handles creating new ones,
+      // and I haven't implemented a PUT, I'll just post again with same ID (backend should handle upsert if I updated it, but currently it's just new Consultation(req.body).save())
+      // Wait, Mongoose save() on existing ID usually errors if it's not a findOneAndUpdate.
+      // Let's use a standard fetch but I should probably check if backend needs update logic.
+      // For now, I'll assume the backend handles it or I'll just use the same POST and hope for the best (or add update logic).
+      // Actually, let's use a specific endpoint if I can, but I'll stick to POST /api/consultations and I'll modify backend server.js to handle upsert.
+      
+      const res = await fetch(`${API_URL}/api/consultations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData)
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        toast.success("Reports sent to patient successfully!");
+        
         // Create a notification for the patient
         const notification = {
-          id: `notif_${Date.now()}`,
+          id: `notif_final_${Date.now()}`,
           userId: appointment.patientId?._id || appointment.patientId,
-          message: `The video call for your appointment with Dr. ${appointment.doctorName} has ended.`,
-          type: "video_call_ended" as const,
+          message: `Dr. ${appointment.doctorName} has sent your consultation reports.`,
+          type: "consultation_ready",
           read: false,
           createdAt: new Date().toISOString(),
           appointmentId: resolvedParams.appointmentId
         };
 
-        // This helper is client-side, using it for immediate UI update if in same session
-        // In a real app, the server would handle this.
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem("mediscribe_notifications") || "[]";
-          const notifs = JSON.parse(stored);
-          notifs.push(notification);
-          localStorage.setItem("mediscribe_notifications", JSON.stringify(notifs));
-        }
+        const stored = localStorage.getItem("mediscribe_notifications") || "[]";
+        const notifs = JSON.parse(stored);
+        notifs.push(notification);
+        localStorage.setItem("mediscribe_notifications", JSON.stringify(notifs));
 
-        toast.success("Consultation saved and call ended successfully!");
+        router.push(`/consultation/${resolvedParams.appointmentId}/summary`);
       } else {
-        console.error("Failed to save consultation:", savedConsultation.message);
-        alert("Failed to save consultation: " + savedConsultation.message);
+        toast.error("Failed to send: " + data.message);
       }
-
-    } catch (error: any) {
-      console.error("Error ending call:", error);
-      alert(`Error: ${error.message}`);
+    } catch (err: any) {
+      toast.error("Error sending report: " + err.message);
     } finally {
-      setIsGeneratingReport(false); // Stop loading
+      setIsGeneratingReport(false);
     }
   };
 
@@ -655,12 +746,106 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
         </div>
       )}
 
+      {isReviewingReport && (
+        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-xl z-[70] flex flex-col p-8 overflow-y-auto">
+          <div className="max-w-4xl mx-auto w-full space-y-8 pb-20">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-4xl font-bold text-white mb-2">Review Consultation Reports</h2>
+                <p className="text-slate-400">Please review and edit the AI-generated outputs before sending to the patient.</p>
+              </div>
+              <button 
+                onClick={() => setIsReviewingReport(false)}
+                className="p-4 bg-slate-800 text-slate-400 hover:text-white rounded-2xl transition-all"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="grid gap-8">
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-indigo-400 uppercase tracking-widest">Doctor Notes (SOAP)</label>
+                <textarea 
+                  value={editableNotes} 
+                  onChange={(e) => setEditableNotes(e.target.value)}
+                  className="w-full h-64 bg-slate-900 border border-slate-700 rounded-3xl p-6 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-blue-400 uppercase tracking-widest">Prescription</label>
+                <textarea 
+                  value={editablePrescription} 
+                  onChange={(e) => setEditablePrescription(e.target.value)}
+                  className="w-full h-40 bg-slate-900 border border-slate-700 rounded-3xl p-6 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-emerald-400 uppercase tracking-widest">Patient Summary</label>
+                <textarea 
+                  value={editableSummary} 
+                  onChange={(e) => setEditableSummary(e.target.value)}
+                  className="w-full h-32 bg-slate-900 border border-slate-700 rounded-3xl p-6 text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-amber-400 uppercase tracking-widest">Lifestyle Recommendations</label>
+                <div className="space-y-3">
+                  {editableLifestyle.map((rec, i) => (
+                    <div key={i} className="flex gap-3">
+                      <input 
+                        value={rec} 
+                        onChange={(e) => {
+                          const newRecs = [...editableLifestyle];
+                          newRecs[i] = e.target.value;
+                          setEditableLifestyle(newRecs);
+                        }}
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-2xl px-6 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                      />
+                      <button 
+                        onClick={() => setEditableLifestyle(prev => prev.filter((_, idx) => idx !== i))}
+                        className="p-3 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </div>
+                  ))}
+                  <button 
+                    onClick={() => setEditableLifestyle(prev => [...prev, ""])}
+                    className="w-full py-3 border border-dashed border-slate-700 rounded-2xl text-slate-500 hover:text-slate-300 hover:border-slate-500 transition-all"
+                  >
+                    + Add Recommendation
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-4 pt-8">
+              <button 
+                onClick={() => setIsReviewingReport(false)}
+                className="flex-1 py-5 bg-slate-800 text-white rounded-[2rem] font-bold text-lg hover:bg-slate-700 transition-all border border-slate-700"
+              >
+                Continue Editing Later
+              </button>
+              <button 
+                onClick={sendToPatient}
+                className="flex-[2] py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-[2rem] font-bold text-xl hover:scale-[1.02] active:scale-95 transition-all shadow-2xl shadow-blue-500/20"
+              >
+                Finalize & Send to Patient
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isGeneratingReport && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[80] p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
-            <h2 className="text-2xl font-bold text-white mb-2">Generating Reports...</h2>
-            <p className="text-slate-400">Analyzing conversation and creating doctor notes, prescription, and summary.</p>
+            <h2 className="text-2xl font-bold text-white mb-2">Processing...</h2>
+            <p className="text-slate-400">Generating and syncing medical documentation.</p>
           </div>
         </div>
       )}
@@ -682,6 +867,18 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
         <div className="flex-1 p-6 flex flex-row gap-6 overflow-hidden">
           <div className="flex-1 relative bg-slate-800 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl group min-h-0">
             <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+            
+            {isRemoteMuted && (
+              <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-[2px] z-10">
+                <div className="bg-red-500 text-white px-6 py-3 rounded-2xl font-bold animate-bounce flex items-center gap-2 shadow-xl border-2 border-white/20">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                  </svg>
+                  MUTED
+                </div>
+              </div>
+            )}
+
             <div className="absolute top-6 left-6 bg-blue-600/90 px-4 py-2 rounded-2xl text-xs font-bold flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
               {user.role === 'patient' ? appointment.doctorName : appointment.patientName} ({uit.remote})
@@ -714,7 +911,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
 
         <div className="w-[450px] bg-slate-800/50 backdrop-blur-xl border-l border-slate-700 flex flex-col shadow-2xl">
           <div className="p-4 border-b border-slate-700/50 flex gap-2">
-            {(['transcript', 'chat'] as const).map(tab => (
+            {(['transcript', 'chat', 'outputs'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === tab ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>{uit[tab]}</button>
             ))}
           </div>
@@ -741,6 +938,19 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
                     </div>
                   )})
                 }
+                {interimTranscript && (
+                  <div className={`flex gap-3 ${user.role === 'doctor' ? 'flex-row-reverse' : ''} opacity-60`}>
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold ${user.role === 'doctor' ? 'bg-indigo-600' : 'bg-teal-600'} shrink-0 animate-pulse`}>
+                      {user.role === 'doctor' ? 'D' : 'P'}
+                    </div>
+                    <div className={`max-w-[85%] flex flex-col ${user.role === 'doctor' ? 'items-end' : 'items-start'}`}>
+                      <span className="text-[10px] text-slate-400 font-semibold mb-1 px-1 uppercase tracking-wider italic">Recording...</span>
+                      <div className={`p-4 rounded-3xl inline-block text-sm border border-dashed ${user.role === 'doctor' ? 'bg-blue-600/30 text-white border-blue-500/50 rounded-tr-sm' : 'bg-slate-700/30 text-slate-200 border-slate-600/50 rounded-tl-sm'}`}>
+                        {interimTranscript}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {activeTab === 'chat' && (
@@ -773,6 +983,34 @@ export default function ConsultationPage({ params }: { params: Promise<{ appoint
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {activeTab === 'outputs' && (
+              <div className="space-y-6 animate-in fade-in duration-500">
+                {!consultationId && !isReviewingReport ? (
+                  <div className="text-center py-20 text-slate-500">
+                    Reports will be generated once the consultation ends.
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="p-6 bg-slate-900/50 rounded-3xl border border-slate-700/50">
+                      <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3">Doctor Notes</h4>
+                      <p className="text-sm text-slate-300 whitespace-pre-wrap">{editableNotes || "Generating..."}</p>
+                    </div>
+                    <div className="p-6 bg-slate-900/50 rounded-3xl border border-slate-700/50">
+                      <h4 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-3">Prescription</h4>
+                      <p className="text-sm text-slate-300 whitespace-pre-wrap">{editablePrescription || "Generating..."}</p>
+                    </div>
+                    {user.role === 'doctor' && (
+                      <button 
+                        onClick={() => setIsReviewingReport(true)}
+                        className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+                      >
+                        Edit & Send to Patient
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             <div ref={chatEndRef} />

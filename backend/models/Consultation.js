@@ -32,11 +32,27 @@ const ConsultationSchema = new mongoose.Schema({
     transcript: {
         type: String
     },
+    translatedTranscript: {
+        type: String
+    },
+    chatMessagesHistory: [{
+        id: String,
+        sender: String,
+        message: String,
+        translatedMessage: String,
+        time: String,
+        isFile: Boolean,
+        fileUrl: String
+    }],
     audioUrl: {
         type: String
     },
     pdfUrl: {
         type: String
+    },
+    isSentToPatient: {
+        type: Boolean,
+        default: false
     },
     createdAt: {
         type: Date,

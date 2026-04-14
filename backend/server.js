@@ -321,12 +321,19 @@ app.get('/api/consultations', async (req, res) => {
 
 app.post('/api/consultations', async (req, res) => {
   try {
-    const newConsultation = new Consultation(req.body);
-    await newConsultation.save();
+    const consultationId = req.body._id;
+    const newConsultation = await Consultation.findOneAndUpdate(
+      { _id: consultationId },
+      req.body,
+      { upsert: true, new: true }
+    );
 
     // Also mark appointment as completed if related to one
     if (req.body.appointmentId) {
-      await Appointment.findByIdAndUpdate(req.body.appointmentId, { status: 'completed' });
+      await Appointment.findByIdAndUpdate(req.body.appointmentId, { 
+        status: 'completed',
+        videoCallStarted: false 
+      });
     }
 
     res.status(201).json({ success: true, data: newConsultation });
@@ -358,7 +365,7 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 // --- AI Generation ---
 app.post('/api/generate-reports', async (req, res) => {
   try {
-    const { transcript, patientName, language } = req.body;
+    const { transcript, patientName, language, chatMessages } = req.body;
 
     if (!transcript || transcript.trim().length < 10) {
       return res.json({
@@ -388,12 +395,14 @@ app.post('/api/generate-reports', async (req, res) => {
     - "doctorNotes": A single string containing professional SOAP notes (Subjective, Objective, Assessment, Plan) with clear headers.
     - "prescription": A single string listing medicines mentioned with dosage. Otherwise "No medications prescribed."
     - "patientSummary": A single string providing a simple summary of what was discussed.
-    - "lifestyleRecommendations": An array of specific strings (tips explicitly mentioned). Return an empty array [] if none.`;
+    - "lifestyleRecommendations": An array of specific strings (tips explicitly mentioned). Return an empty array [] if none.
+    - "translatedTranscript": A translated version of the full transcript in ${language}. Keep the speaker names as "Doctor" and "Patient".
+    - "translatedChat": If chat messages are provided in the input, provide an array of objects with { id, translatedMessage }. Only translate the "message" part. Use empty array [] if no chat messages.`;
 
     const completion = await openai.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Transcript:\n${transcript}` }
+        { role: "user", content: `Transcript:\n${transcript}\n\nChat Messages:\n${JSON.stringify(chatMessages || [])}` }
       ],
       model: "gpt-4o",
       response_format: { type: "json_object" },

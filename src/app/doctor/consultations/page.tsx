@@ -96,7 +96,12 @@ export default function DoctorConsultationsPage() {
                         {appointment?.patientName.charAt(0)}
                       </div>
                       <div>
-                        <h3 className="font-semibold text-slate-900">{appointment?.patientName}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-slate-900">{appointment?.patientName}</h3>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${consultation.isSentToPatient ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {consultation.isSentToPatient ? 'Sent' : 'Draft'}
+                          </span>
+                        </div>
                         <p className="text-sm text-slate-600">{appointment?.department}</p>
                         <p className="text-sm text-slate-500">{new Date(consultation.createdAt).toLocaleDateString()}</p>
                       </div>

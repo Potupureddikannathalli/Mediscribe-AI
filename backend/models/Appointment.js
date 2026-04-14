@@ -59,6 +59,14 @@ const AppointmentSchema = new mongoose.Schema({
         isFile: Boolean,
         fileUrl: String
     }],
+    doctorMuted: {
+        type: Boolean,
+        default: false
+    },
+    patientMuted: {
+        type: Boolean,
+        default: false
+    },
     createdAt: {
         type: Date,
         default: Date.now

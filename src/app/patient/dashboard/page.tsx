@@ -46,8 +46,10 @@ export default function PatientDashboard() {
     markNotificationRead(notification.id);
     if (notification.appointmentId) {
       const apt = appointments.find(a => a.id === notification.appointmentId);
-      if (apt?.videoCallStarted && notification.type !== "video_call_ended") {
+      if (apt?.videoCallStarted && notification.type !== "video_call_ended" && notification.type !== "consultation_ready") {
         router.push(`/consultation/${apt.id}`);
+      } else if (notification.type === "consultation_ready") {
+        router.push(`/consultation/${notification.appointmentId}/summary`);
       } else {
         router.push("/patient/appointments");
       }
@@ -78,6 +80,9 @@ export default function PatientDashboard() {
               </Link>
               <Link href="/patient/appointments" className="text-slate-600 hover:text-blue-600 font-medium">
                 My Appointments
+              </Link>
+              <Link href="/patient/reports" className="text-slate-600 hover:text-blue-600 font-medium">
+                Medical Reports
               </Link>
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white font-medium">
@@ -131,7 +136,12 @@ export default function PatientDashboard() {
                   )}
                   {notification.type === "video_call_ended" && (
                     <button className="mt-2 w-full py-1.5 bg-slate-600 text-white rounded-lg text-xs font-bold">
-                      VIEW SUMMARY
+                      AWAITING REPORTS
+                    </button>
+                  )}
+                  {notification.type === "consultation_ready" && (
+                    <button className="mt-3 w-full py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-md shadow-blue-200">
+                      VIEW REPORTS
                     </button>
                   )}
                 </div>
